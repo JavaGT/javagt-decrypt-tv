@@ -1,0 +1,31 @@
+{
+  "name": "tvnz-decrypt",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./app": "./src/app.mjs",
+    "./cli": "./src/adapters/cli.mjs",
+    "./http": "./src/adapters/http-server.mjs",
+    "./module": "./src/adapters/module.mjs",
+    "./n3u8dl-node": "./src/n3u8dl-node/index.mjs",
+    "./providers/tvnz": "./src/providers/tvnz-provider.mjs",
+    "./providers/threenow": "./src/providers/threenow-provider.mjs"
+  },
+  "bin": {
+    "tvnz-decrypt": "./src/adapters/cli.mjs"
+  },
+  "scripts": {
+    "cli": "node src/adapters/cli.mjs",
+    "serve": "node -e \"import('./src/app.mjs').then(({createHttpServer})=>createHttpServer().start())\"",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.0",
+    "node-aes-cmac": "^0.1.1",
+    "protobufjs": "^8.0.0",
+    "requests": "^0.3.0",
+    "xmldom": "^0.6.0",
+    "yaml": "^2.8.3"
+  }
+}
