@@ -127,7 +127,7 @@ export function extractManifestWidevineData(manifestText, manifestUrl) {
     let licenseUrl = null;
 
     for (const element of contentProtections) {
-        const schemeIdUri = element.getAttribute('schemeIdUri');
+        const schemeIdUri = element.getAttribute('schemeIdUri')?.toLowerCase();
         if (schemeIdUri !== 'urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed') {
             continue;
         }
@@ -214,7 +214,8 @@ export async function getWidevineKeys({
     userAgent,
     retention,
     timeoutMs = 20000,
-    authorizationToken = null
+    authorizationToken = null,
+    accessToken = null
 }) {
     const parsedPssh = new PSSH(pssh);
     const device = Device.load(wvdDevicePath);
@@ -238,8 +239,10 @@ export async function getWidevineKeys({
             Origin: origin,
             Referer: referer
         };
-        if (authorizationToken) {
-            headers.Authorization = `Bearer ${authorizationToken}`;
+
+        // Add Authorization header with Bearer token if provided
+        if (accessToken) {
+            headers['Authorization'] = `Bearer ${accessToken}`;
         }
 
         const response = await fetch(licenseUrl, {

@@ -117,8 +117,17 @@ function buildUrlsFromTemplate({
 function scoreRepresentation(rep, kind) {
     const bandwidth = Number(rep.bandwidth || 0);
     const height = Number(rep.height || 0);
+    // Prefer /content/pubcontent/ (origin) URLs over /tm/ (CDN) paths
+    // The /tm/ CDN path has segment range gating (403 after ~segment 15)
+    // The /content/pubcontent/ path has full segment availability
+    const isTmCdnPath = rep.baseUrl && rep.baseUrl.includes('/tm/');
+    const tmPenalty = isTmCdnPath ? 10000000000 : 0;
     if (kind === 'video') {
-        return height * 1000000 + bandwidth;
+        return height * 1000000 + bandwidth - tmPenalty;
+    }
+    // Audio also uses /tm/ CDN path which has segment range gating — apply same penalty
+    if (kind === 'audio') {
+        return bandwidth - tmPenalty;
     }
     return bandwidth;
 }
@@ -173,12 +182,9 @@ export function parseMpdManifest({ manifestUrl, manifestText, selectVideo = 'bes
         throw new Error('MPD contains no Period nodes');
     }
 
-    const periodNode = periods[0];
-    const adaptationSets = listChildrenByTag(periodNode, 'AdaptationSet');
     const mediaPresentationDuration = parseDurationSeconds(getAttr(mpdNode, 'mediaPresentationDuration'));
 
     const mpdBase = getNodeLocalBaseUrl(mpdNode);
-    const periodBase = getNodeLocalBaseUrl(periodNode);
 
     const streams = {
         video: [],
@@ -186,56 +192,61 @@ export function parseMpdManifest({ manifestUrl, manifestText, selectVideo = 'bes
         subtitle: []
     };
 
-    for (const adaptation of adaptationSets) {
-        const mimeType = getAttr(adaptation, 'mimeType');
-        const contentType = getAttr(adaptation, 'contentType');
-        const type = contentType || (mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : mimeType.startsWith('text/') ? 'text' : mimeType.includes('ttml') ? 'text' : 'other');
-        if (type !== 'video' && type !== 'audio' && type !== 'text') {
-            continue;
-        }
+    for (const periodNode of periods) {
+        const periodBase = getNodeLocalBaseUrl(periodNode);
+        const adaptationSets = listChildrenByTag(periodNode, 'AdaptationSet');
 
-        const adaptationBase = getNodeLocalBaseUrl(adaptation);
-        const adaptationTemplate = firstChildByTag(adaptation, 'SegmentTemplate');
-        const representations = listChildrenByTag(adaptation, 'Representation');
-
-        for (const representation of representations) {
-            const representationBase = getNodeLocalBaseUrl(representation);
-            const representationTemplate = firstChildByTag(representation, 'SegmentTemplate');
-            const templateNode = representationTemplate || adaptationTemplate;
-            if (type !== 'text' && !templateNode) {
+        for (const adaptation of adaptationSets) {
+            const mimeType = getAttr(adaptation, 'mimeType');
+            const contentType = getAttr(adaptation, 'contentType');
+            const type = contentType || (mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : mimeType.startsWith('text/') ? 'text' : mimeType.includes('ttml') ? 'text' : 'other');
+            if (type !== 'video' && type !== 'audio' && type !== 'text') {
                 continue;
             }
 
-            const baseUrl = resolveBaseChain(manifestUrl, [mpdBase, periodBase, adaptationBase, representationBase]);
+            const adaptationBase = getNodeLocalBaseUrl(adaptation);
+            const adaptationTemplate = firstChildByTag(adaptation, 'SegmentTemplate');
+            const representations = listChildrenByTag(adaptation, 'Representation');
 
-            const rep = {
-                id: getAttr(representation, 'id') || `${type}-${streams[type].length + 1}`,
-                bandwidth: Number(getAttr(representation, 'bandwidth') || 0),
-                height: Number(getAttr(representation, 'height') || 0),
-                width: Number(getAttr(representation, 'width') || 0),
-                codecs: getAttr(representation, 'codecs') || getAttr(adaptation, 'codecs') || '',
-                language: getAttr(adaptation, 'lang') || '',
-                baseUrl,
-                mimeType
-            };
+            for (const representation of representations) {
+                const representationBase = getNodeLocalBaseUrl(representation);
+                const representationTemplate = firstChildByTag(representation, 'SegmentTemplate');
+                const templateNode = representationTemplate || adaptationTemplate;
+                if (type !== 'text' && !templateNode) {
+                    continue;
+                }
 
-            if (type !== 'text') {
-                rep.segmentTemplate = {
-                    node: templateNode,
-                    media: getAttr(templateNode, 'media'),
-                    initialization: getAttr(templateNode, 'initialization'),
-                    timescale: Number(getAttr(templateNode, 'timescale') || 1),
-                    duration: Number(getAttr(templateNode, 'duration') || 0),
-                    startNumber: Number(getAttr(templateNode, 'startNumber') || 1)
+                const baseUrl = resolveBaseChain(manifestUrl, [mpdBase, periodBase, adaptationBase, representationBase]);
+
+                const rep = {
+                    id: getAttr(representation, 'id') || `${type}-${streams[type].length + 1}`,
+                    bandwidth: Number(getAttr(representation, 'bandwidth') || 0),
+                    height: Number(getAttr(representation, 'height') || 0),
+                    width: Number(getAttr(representation, 'width') || 0),
+                    codecs: getAttr(representation, 'codecs') || getAttr(adaptation, 'codecs') || '',
+                    language: getAttr(adaptation, 'lang') || '',
+                    baseUrl,
+                    mimeType
                 };
-            }
 
-            if (type === 'text') {
-                rep.subtitleUrl = baseUrl;
-                rep.kind = 'subtitle';
-                streams.subtitle.push(rep);
-            } else {
-                streams[type].push(rep);
+                if (type !== 'text') {
+                    rep.segmentTemplate = {
+                        node: templateNode,
+                        media: getAttr(templateNode, 'media'),
+                        initialization: getAttr(templateNode, 'initialization'),
+                        timescale: Number(getAttr(templateNode, 'timescale') || 1),
+                        duration: Number(getAttr(templateNode, 'duration') || 0),
+                        startNumber: Number(getAttr(templateNode, 'startNumber') || 1)
+                    };
+                }
+
+                if (type === 'text') {
+                    rep.subtitleUrl = baseUrl;
+                    rep.kind = 'subtitle';
+                    streams.subtitle.push(rep);
+                } else {
+                    streams[type].push(rep);
+                }
             }
         }
     }
@@ -248,31 +259,41 @@ export function parseMpdManifest({ manifestUrl, manifestText, selectVideo = 'bes
         throw new Error('No supported video/audio representations found in MPD');
     }
 
+    // For multi-period DASH content, find ALL periods matching the selected representation
+    // (same id + same baseUrl) and merge their segment URLs in period order.
+    function buildMergedUrls(selected, allReps) {
+        if (!selected) return null;
+        const matchingReps = allReps.filter(r => r.id === selected.id && r.baseUrl === selected.baseUrl);
+        const allSegmentUrls = [];
+        let initializationUrl = null;
+        for (const rep of matchingReps) {
+            const built = buildUrlsFromTemplate({
+                manifestUrl,
+                baseUrl: rep.baseUrl,
+                representationId: rep.id,
+                bandwidth: rep.bandwidth,
+                segmentTemplate: rep.segmentTemplate,
+                mediaPresentationDuration
+            });
+            if (initializationUrl === null) {
+                initializationUrl = built.initializationUrl;
+            }
+            allSegmentUrls.push(...built.segmentUrls);
+        }
+        return { initializationUrl, segmentUrls: allSegmentUrls };
+    }
+
     const selected = {
         video: selectedVideo
             ? {
                 ...selectedVideo,
-                ...buildUrlsFromTemplate({
-                    manifestUrl,
-                    baseUrl: selectedVideo.baseUrl,
-                    representationId: selectedVideo.id,
-                    bandwidth: selectedVideo.bandwidth,
-                    segmentTemplate: selectedVideo.segmentTemplate,
-                    mediaPresentationDuration
-                })
+                ...buildMergedUrls(selectedVideo, streams.video)
             }
             : null,
         audio: selectedAudio
             ? {
                 ...selectedAudio,
-                ...buildUrlsFromTemplate({
-                    manifestUrl,
-                    baseUrl: selectedAudio.baseUrl,
-                    representationId: selectedAudio.id,
-                    bandwidth: selectedAudio.bandwidth,
-                    segmentTemplate: selectedAudio.segmentTemplate,
-                    mediaPresentationDuration
-                })
+                ...buildMergedUrls(selectedAudio, streams.audio)
             }
             : null,
         subtitles: selectedSubtitles.map((subtitle) => ({

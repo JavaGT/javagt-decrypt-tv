@@ -117,6 +117,13 @@ Or with scripts:
 npm run cli -- <url>
 ```
 
+### TVNZ Authentication
+
+TVNZ now uses OTP-based authentication. See [TVNZ-PROVIDER.md](./docs/TVNZ-PROVIDER.md) for:
+- Session token extraction from browser
+- OTP authentication flow
+- Environment variable setup
+
 Useful flags:
 
 - `-F` / `--list-formats` to show available tracks.

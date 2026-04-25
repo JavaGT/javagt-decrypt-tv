@@ -80,17 +80,30 @@ async function downloadSubtitleTrack(track, context, config) {
     const subtitleName = `${context.safeName}.${safeId}.vtt`;
     const subtitlePath = path.join(context.saveDir, subtitleName);
 
-    if (track.subtitleUrl) {
-        const content = await fetchTextWithRetry(track.subtitleUrl, config);
-        fs.writeFileSync(subtitlePath, content, 'utf8');
-        return subtitlePath;
-    }
-
     const segmentUrls = Array.isArray(track.segmentUrls)
         ? track.segmentUrls
         : Array.isArray(track.segments)
             ? track.segments.map((segment) => segment.url)
             : [];
+
+    // Skip if subtitleUrl is a directory/baseUrl without segmentUrls (not a direct file)
+    // This happens with DASH text AdaptationSets that use SegmentTimeline instead of fixed files
+    if (!segmentUrls.length && track.subtitleUrl) {
+        const url = track.subtitleUrl;
+        // Check if subtitleUrl looks like a segment URL pattern (contains $Time$ or $Number$)
+        // If it's just a base directory, skip this subtitle track
+        if (!url.includes('$Time$') && !url.includes('$Number$') && !url.match(/\.(vtt|ttml|srt|smi)/i)) {
+            console.log(`[DEBUG] Skipping subtitle track ${track.id} - subtitleUrl is a directory, not a direct file`);
+            return null;
+        }
+    }
+
+    if (track.subtitleUrl && !segmentUrls.length) {
+        // For direct subtitle files (HLS or direct download URLs)
+        const content = await fetchTextWithRetry(track.subtitleUrl, config);
+        fs.writeFileSync(subtitlePath, content, 'utf8');
+        return subtitlePath;
+    }
 
     if (!segmentUrls.length) {
         return null;
