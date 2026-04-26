@@ -560,12 +560,25 @@ export class TVNZAPI {
         console.log(`  payload.contentTypeId: ${contentType}`);
         console.log(`  payload.catalogType: ${catalogType}`);
 
+        const startTime = Date.now();
         const response = await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify(payload),
             signal: createTimeoutSignal()
         });
+
+        // Log to HAR if enabled
+        if (this.httpClient?.logHarResponse) {
+            await this.httpClient.logHarResponse(
+                response,
+                url,
+                'POST',
+                headers,
+                JSON.stringify(payload),
+                startTime
+            );
+        }
 
         const responseText = await response.text();
         console.log(`${bcolors.LIGHTBLUE}[DEBUG] Content authorize response status: ${response.status}${bcolors.ENDC}`);

@@ -387,12 +387,25 @@ export async function createSsaiSession(mtSessionUrl, playerParams, options = {}
         ...(options.headers || {})
     };
 
+    const startTime = Date.now();
     const response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
         signal: createTimeoutSignal(options.timeoutMs || 20000)
     });
+
+    // Log to HAR if enabled
+    if (this.httpClient?.logHarResponse) {
+        await this.httpClient.logHarResponse(
+            response,
+            url,
+            'POST',
+            headers,
+            JSON.stringify(payload),
+            startTime
+        );
+    }
 
     if (!response.ok) {
         const errorText = await response.text();
