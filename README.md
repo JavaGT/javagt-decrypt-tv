@@ -119,7 +119,26 @@ npm run cli -- <url>
 
 ### TVNZ Authentication
 
-TVNZ now uses OTP-based authentication. See [TVNZ-PROVIDER.md](./docs/TVNZ-PROVIDER.md) for:
+TVNZ+ logs in with an email code (no password). Two options:
+
+**1. Fully automated (recommended)** — powered by `@javagt/tvnz-plus-api`:
+
+```bash
+# Log in once (mints reCAPTCHA via Playwright, reads the code from your
+# self-hosted mailbox, saves a session the downloader auto-detects):
+node src/adapters/cli.mjs --login yourname@anything.javagrant.ac.nz
+
+# Or log in on the fly and download in one command:
+node src/adapters/cli.mjs --email yourname@anything.javagrant.ac.nz <url>
+```
+
+Prerequisites for the automated path:
+- The self-hosted Postfix mail pipeline (`@*.javagrant.ac.nz` → `~/Mail`) and
+  a fresh reCAPTCHA token: `node ../tvnz-plus-api/dist/otp/captcha-cli.js --channel chrome`
+  (writes `~/.tvnz-captcha`, which the login reads automatically).
+- Or set `TVNZ_CAPTCHA_TOKEN` / `TVNZ_SESSION_FILE` as alternatives.
+
+**2. Manual session** — see [TVNZ-PROVIDER.md](./docs/TVNZ-PROVIDER.md) for:
 - Session token extraction from browser
 - OTP authentication flow
 - Environment variable setup
@@ -136,6 +155,8 @@ Useful flags:
 - `--write-info-json` to write a sidecar info JSON file.
 - `--no-mtime` to keep timestamp preservation disabled, matching the current Node pipeline.
 - `--retention-level safe|debug|forensic` to control redaction and artifact depth.
+- `--login <email>` to run the fully automated email-code login (no URL needed).
+- `--email <email>` to auto-login before downloading a URL.
 
 Retention artifacts now include:
 

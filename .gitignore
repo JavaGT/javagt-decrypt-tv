@@ -4,3 +4,6 @@ cookies.txt
 .env
 *.wvd
 .DS_Store
+downloads/
+tvnz-session-*.json
+local_storage.json

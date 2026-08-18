@@ -16,6 +16,8 @@ export function getCliUsageText() {
         '  --credentials <value>       Provider credentials override',
         '  --provider-id <id>          Provider override',
         '  --device-path <path>        Device file path',
+        '  --email <email>             Fully automated email-code login before download',
+        '  --login <email>             Just log in (mint captcha, get code, save session)',
         '  --help                      Show help'
     ].join('\n');
 }
@@ -55,6 +57,13 @@ export function parseCliArgs(argv) {
         if (token === '-f' || token === '--format') {
             const value = takeOptionValue(argv, i, token);
             options.format = value;
+            i += 1;
+            continue;
+        }
+
+        if (token === '--login' || token === '--email') {
+            const value = takeOptionValue(argv, i, token);
+            options[token.slice(2)] = value;
             i += 1;
             continue;
         }

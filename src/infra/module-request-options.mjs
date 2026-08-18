@@ -7,7 +7,8 @@ export function buildModuleRequestOptions(rawOptions = {}) {
         retentionLevel: rawOptions.retentionLevel,
         format: rawOptions.format,
         output: rawOptions.output,
-        noMtime: Boolean(rawOptions.noMtime)
+        noMtime: Boolean(rawOptions.noMtime),
+        email: rawOptions.email
     };
 }
 

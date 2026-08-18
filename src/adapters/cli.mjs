@@ -24,6 +24,23 @@ async function main() {
         return;
     }
 
+    // Standalone login: mint captcha → send code → wait for mailbox → save session.
+    if (options.login) {
+        const { automatedEmailLogin } = await import('../infra/automated-login.mjs');
+        const sessionPath = options.sessionPath || './downloads/tvnz-session-automated.json';
+        console.log(`Logging in as ${options.login}…`);
+        const session = await automatedEmailLogin({
+            email: options.login,
+            sessionPath,
+            onProgress: (e) => console.log(`  [${e.phase}] ${e.message ?? ''}`),
+        });
+        console.log(`Logged in. Session saved to ${sessionPath}`);
+        console.log(`  accessToken : ${session.accessToken.slice(0, 14)}… (${session.accessToken.length} chars)`);
+        console.log(`  deviceref   : ${session.deviceref}`);
+        console.log('Next: tvnz-decrypt --credentials <session> <url>, or pass --email to log in on the fly.');
+        return;
+    }
+
     const [inputUrl] = positionals;
 
     if (!inputUrl) {

@@ -34,6 +34,7 @@ import {
     generateDeviceTokenJwt,
     createSsaiSession
 } from '../infra/tvnz-auth.mjs';
+import { automatedEmailLogin } from '../infra/automated-login.mjs';
 
 // Base URLs
 const EVERGENT_BASE = 'https://rest-prod-tvnz.evergentpd.com/tvnz';
@@ -391,6 +392,35 @@ export class TVNZAPI {
         }
 
         console.info(`${bcolors.OKGREEN}Session login successful${bcolors.ENDC}`);
+    }
+
+    /**
+     * Fully automated email-code login, driven by @javagt/tvnz-plus-api.
+     *
+     * Flow: mint reCAPTCHA (Playwright, via TVNZ_CAPTCHA_TOKEN / ~/.tvnz-captcha)
+     * → createOTP → code arrives in the self-hosted mailbox (~/Mail) → extracted
+     * → confirmOTP → session loaded into this provider, ready for downloads.
+     *
+     * @param {string} email - TVNZ+ account email
+     * @param {Object} [options]
+     * @param {string} [options.sessionPath] - persist a tvnz-session JSON here
+     * @param {Object} [options.captcha] - SDK captcha selection (default auto)
+     * @returns {Promise<Object>} the session (accessToken/refreshToken/deviceref/contactId)
+     */
+    async loginWithEmailAutomated(email, { sessionPath, captcha, onProgress } = {}) {
+        const session = await automatedEmailLogin({ email, sessionPath, captcha, onProgress });
+
+        this.loadCredentials({
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
+            deviceId: session.deviceref,
+            contactId: session.contactId
+        });
+
+        await this._ensureEdgeApiToken();
+
+        console.info(`${bcolors.OKGREEN}Automated email-code login successful (${email})${bcolors.ENDC}`);
+        return session;
     }
 
     /**
@@ -1085,6 +1115,20 @@ export async function runTvnzWorkflow(inputUrl, context = {}) {
             if (sessionFile && fs.existsSync(sessionFile)) {
                 credentials = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
             }
+        }
+
+        // Last resort: a --email flag triggers the fully automated email-code
+        // login (Playwright reCAPTCHA mint + code extracted from the self-hosted
+        // mailbox) via @javagt/tvnz-plus-api.
+        const loginEmail = context.options?.email || context.email;
+        if ((!credentials.accessToken && !credentials.refreshToken) && loginEmail) {
+            const session = await automatedEmailLogin({ email: loginEmail });
+            credentials = {
+                accessToken: session.accessToken,
+                refreshToken: session.refreshToken,
+                deviceref: session.deviceref,
+                contactId: session.contactId
+            };
         }
     }
 
