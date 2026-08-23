@@ -215,7 +215,8 @@ export async function getWidevineKeys({
     retention,
     timeoutMs = 20000,
     authorizationToken = null,
-    accessToken = null
+    accessToken = null,
+    requestHeaders = {}
 }) {
     const parsedPssh = new PSSH(pssh);
     const device = Device.load(wvdDevicePath);
@@ -234,14 +235,15 @@ export async function getWidevineKeys({
 
         const headers = {
             Accept: '*/*',
-            'Content-Type': 'application/octet-stream',
             'User-Agent': userAgent,
             Origin: origin,
-            Referer: referer
+            Referer: referer,
+            ...requestHeaders,
+            'Content-Type': 'application/octet-stream'
         };
 
-        // Add Authorization header with Bearer token if provided
-        if (accessToken) {
+        // Keep the legacy token option for providers without structured headers.
+        if (accessToken && !requestHeaders.Authorization) {
             headers['Authorization'] = `Bearer ${accessToken}`;
         }
 

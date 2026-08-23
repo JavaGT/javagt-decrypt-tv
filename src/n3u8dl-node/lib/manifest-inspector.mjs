@@ -105,7 +105,8 @@ export function mapHlsMediaTracks(parsed, manifestUrl) {
 
 export async function buildManifestInspectionReport(config) {
     const manifestText = config.manifestText || await fetchText(config.inputUrl, {
-        timeoutMs: config.timeoutMs
+        timeoutMs: config.timeoutMs,
+        headers: config.requestHeaders || config.headers || {}
     });
 
     const isHls = String(config.inputUrl).toLowerCase().includes('.m3u8') || manifestText.includes('#EXTM3U');

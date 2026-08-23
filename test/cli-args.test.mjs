@@ -18,6 +18,7 @@ test('parseCliArgs parses key/value options', () => {
         '--provider-id', 'threenow',
         '--device-path', './device.wvd',
         '--retention-level', 'debug',
+        '--session-path', './session.json',
         '-o', 'custom',
         'https://example.test/page'
     ];
@@ -28,6 +29,7 @@ test('parseCliArgs parses key/value options', () => {
     assert.equal(parsed.options.providerId, 'threenow');
     assert.equal(parsed.options.devicePath, './device.wvd');
     assert.equal(parsed.options.retentionLevel, 'debug');
+    assert.equal(parsed.options.sessionPath, './session.json');
     assert.equal(parsed.options.output, 'custom');
     assert.deepEqual(parsed.positionals, ['https://example.test/page']);
 });
@@ -47,4 +49,5 @@ test('getCliUsageText includes key options', () => {
     assert.match(text, /--downloads-path/);
     assert.match(text, /--provider-id/);
     assert.match(text, /--device-path/);
+    assert.match(text, /--session-path/);
 });

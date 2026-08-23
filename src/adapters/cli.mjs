@@ -35,7 +35,6 @@ async function main() {
             onProgress: (e) => console.log(`  [${e.phase}] ${e.message ?? ''}`),
         });
         console.log(`Logged in. Session saved to ${sessionPath}`);
-        console.log(`  accessToken : ${session.accessToken.slice(0, 14)}… (${session.accessToken.length} chars)`);
         console.log(`  deviceref   : ${session.deviceref}`);
         console.log('Next: tvnz-decrypt --credentials <session> <url>, or pass --email to log in on the fly.');
         return;

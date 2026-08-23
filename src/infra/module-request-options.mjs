@@ -8,7 +8,8 @@ export function buildModuleRequestOptions(rawOptions = {}) {
         format: rawOptions.format,
         output: rawOptions.output,
         noMtime: Boolean(rawOptions.noMtime),
-        email: rawOptions.email
+        email: rawOptions.email,
+        sessionPath: rawOptions.sessionPath
     };
 }
 

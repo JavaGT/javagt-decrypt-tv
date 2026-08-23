@@ -282,7 +282,8 @@ export function createDownloaderContext(config = {}) {
 
 export async function resolveSelectedTracks(config, options = {}) {
     const manifestText = options.manifestText || await fetchText(config.inputUrl, {
-        timeoutMs: config.timeoutMs
+        timeoutMs: config.timeoutMs,
+        headers: config.requestHeaders || config.headers || {}
     });
 
     const isHls = String(config.inputUrl).toLowerCase().includes('.m3u8') || manifestText.includes('#EXTM3U');
@@ -298,7 +299,8 @@ export async function resolveSelectedTracks(config, options = {}) {
             });
 
             const videoManifestText = await fetchText(parsedMaster.selected.video.uri, {
-                timeoutMs: config.timeoutMs
+                timeoutMs: config.timeoutMs,
+                headers: config.requestHeaders || config.headers || {}
             });
 
             const videoPlaylist = parseHlsMediaPlaylist({
@@ -309,7 +311,8 @@ export async function resolveSelectedTracks(config, options = {}) {
             let audioPlaylist = null;
             if (parsedMaster.selected.audio?.uri) {
                 const audioManifestText = await fetchText(parsedMaster.selected.audio.uri, {
-                    timeoutMs: config.timeoutMs
+                    timeoutMs: config.timeoutMs,
+                    headers: config.requestHeaders || config.headers || {}
                 });
                 audioPlaylist = parseHlsMediaPlaylist({
                     manifestUrl: parsedMaster.selected.audio.uri,

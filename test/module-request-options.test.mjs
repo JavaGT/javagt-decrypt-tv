@@ -19,7 +19,9 @@ test('buildModuleRequestOptions preserves provided values', () => {
         retentionLevel: 'debug',
         format: 'bestvideo+bestaudio',
         output: 'demo',
-        noMtime: 1
+        noMtime: 1,
+        email: 'user@example.test',
+        sessionPath: './session.json'
     });
 
     assert.equal(options.downloadsPath, '/tmp/out');
@@ -30,4 +32,6 @@ test('buildModuleRequestOptions preserves provided values', () => {
     assert.equal(options.format, 'bestvideo+bestaudio');
     assert.equal(options.output, 'demo');
     assert.equal(options.noMtime, true);
+    assert.equal(options.email, 'user@example.test');
+    assert.equal(options.sessionPath, './session.json');
 });

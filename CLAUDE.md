@@ -84,7 +84,7 @@ URL: https://www.tvnz.co.nz/player/tvepisode/australian-survivor-redemption-9
 
 | File | Role |
 |------|------|
-| `src/infra/tvnz-auth.mjs` | OTP auth, device registration, SSAI session creation |
+| `@javagt/tvnz-plus-api` | TVNZ OTP/auth, device registration, playback authorization |
 | `src/infra/tvnz-session.mjs` | Session management, credential loading |
 | `src/providers/tvnz-provider.mjs` | Main TVNZ API provider, content authorization |
 | `src/n3u8dl-node/lib/mpd-parser.mjs` | MPD parsing, segment URL construction, track selection |
