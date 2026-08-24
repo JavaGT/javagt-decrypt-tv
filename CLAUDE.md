@@ -85,6 +85,7 @@ URL: https://www.tvnz.co.nz/player/tvepisode/australian-survivor-redemption-9
 | File | Role |
 |------|------|
 | `@javagt/tvnz-plus-api` | TVNZ OTP/auth, device registration, playback authorization |
+| `src/infra/automated-login.mjs` | Automated email-code login (captcha mint → mailbox code → session) |
 | `src/infra/tvnz-session.mjs` | Session management, credential loading |
 | `src/providers/tvnz-provider.mjs` | Main TVNZ API provider, content authorization |
 | `src/n3u8dl-node/lib/mpd-parser.mjs` | MPD parsing, segment URL construction, track selection |
@@ -120,18 +121,18 @@ URL: https://www.tvnz.co.nz/player/tvepisode/australian-survivor-redemption-9
 
 ## Critical Data Values
 
-### Known Working Credentials (from tvnz-session.json)
-```json
-{
-  "accessToken": "eyJ0eXAiOiJKV1Qi...",
-  "refreshToken": "xDbX-Dr9i-GD4F-kCd0-QKVj-MSWW-F1",
-  "oAuthToken": "eyJhbGciOiJSUzI1NiIs...",
-  "xAuthToken": "eyJlbmMiOiJBMjU2R0NNIi...",
-  "deviceref": "51ff1fd0-1b45-4803-b600-79bf87844b6b",
-  "deviceSecret": "gkQyrjQpw/drjiYcZcDcLf4vVyl5uZQD9UwJU+Mz8+E=",
-  "deviceId": "51ff1fd0-1b45-4803-b600-79bf87844b6b"
-}
-```
+### Known Working Credentials
+
+Real session tokens are **not stored in this file**. They live in gitignored
+locations so they never get committed:
+
+- `./downloads/tvnz-session-*.json` — produced by `--login` / the automated
+  email-code login, auto-detected by `credentialsFrom()`.
+- `.env` — see `.env.example` for variable names (`TVNZ_EMAIL`, `TVNZ_SESSION_FILE`).
+
+The automated login path (reCAPTCHA mint → code from the self-hosted mailbox →
+confirm → session) is driven by `@javagt/tvnz-plus-api`; see the README "TVNZ
+Authentication" section and `src/infra/automated-login.mjs`.
 
 ### Content Authorization Response
 ```

@@ -121,6 +121,13 @@ npm run cli -- <url>
 
 TVNZ+ logs in with an email code (no password). Two options:
 
+**Quick start**
+
+```bash
+cp .env.example .env          # once — fill in your account below
+npx tvnz-captcha              # mint a reCAPTCHA token (writes ~/.tvnz-captcha)
+```
+
 **1. Fully automated (recommended)** — powered by `@javagt/tvnz-plus-api`:
 
 ```bash
@@ -128,15 +135,30 @@ TVNZ+ logs in with an email code (no password). Two options:
 # self-hosted mailbox, saves a session the downloader auto-detects):
 node src/adapters/cli.mjs --login yourname@anything.javagrant.ac.nz
 
-# Or log in on the fly and download in one command:
+# Or set TVNZ_EMAIL in .env and download directly — login happens automatically:
+node src/adapters/cli.mjs <url>
+
+# Or log in on the fly with an explicit account:
 node src/adapters/cli.mjs --email yourname@anything.javagrant.ac.nz <url>
 ```
 
+Environment variables (see `.env.example`):
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `TVNZ_EMAIL` | Account used by the automated login (used when no `--email` flag) | recommended |
+| `WIDEVINE_DEVICE_FILEPATH` | Widevine device file for decryption | yes* |
+| `TVNZ_API_USER` / `TVNZ_API_PASSWORD` / `TVNZ_CLIENT_ID` / `TVNZ_CLIENT_SECRET` | Overrides forwarded to the SDK (embedded defaults exist) | no |
+| `TVNZ_CAPTCHA_TOKEN` | reCAPTCHA token (else `~/.tvnz-captcha`) | no |
+| `TVNZ_SESSION_FILE` | Explicit credentials file (else auto-detected) | no |
+
+\* The downloader looks for `./device.wvd` by default.
+
 Prerequisites for the automated path:
-- The self-hosted Postfix mail pipeline (`@*.javagrant.ac.nz` → `~/Mail`) and
-  a fresh reCAPTCHA token: `node ../tvnz-plus-api/dist/otp/captcha-cli.js --channel chrome`
-  (writes `~/.tvnz-captcha`, which the login reads automatically).
-- Or set `TVNZ_CAPTCHA_TOKEN` / `TVNZ_SESSION_FILE` as alternatives.
+- The self-hosted Postfix mail pipeline (`@*.javagrant.ac.nz` → `~/Mail`) — see
+  `~/Code/neweps-cc/SELFHOSTED-EMAIL-CODES.md`.
+- A fresh reCAPTCHA token: `npx tvnz-captcha` (opens a Chrome window briefly).
+  The login reads `~/.tvnz-captcha` automatically.
 
 **2. Manual session** — see [TVNZ-PROVIDER.md](./docs/TVNZ-PROVIDER.md) for:
 - Session token extraction from browser
