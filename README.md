@@ -128,7 +128,7 @@ cp .env.example .env          # once — fill in your account below
 npx tvnz-captcha              # mint a reCAPTCHA token (writes ~/.tvnz-captcha)
 ```
 
-**1. Fully automated (recommended)** — powered by `@javagt/tvnz-plus-api`:
+**1. Fully automated (recommended)** — powered by `tvnz-plus-api`:
 
 ```bash
 # Log in once (mints reCAPTCHA via Playwright, reads the code from your

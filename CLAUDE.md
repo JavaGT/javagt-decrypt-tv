@@ -2,7 +2,7 @@
 
 ## System Context
 
-**Project**: `javagt-decrypt-tv` — Video decryption/download tool for NZ streaming services
+**Project**: `tvnz-decrypt` — Video decryption/download tool for NZ streaming services
 **Challenge**: HTTP 403 Access Denied on DASH segment downloads from CloudFront CDN; audio track selection; decryption producing shorter output than expected
 
 ---
@@ -84,7 +84,7 @@ URL: https://www.tvnz.co.nz/player/tvepisode/australian-survivor-redemption-9
 
 | File | Role |
 |------|------|
-| `@javagt/tvnz-plus-api` | TVNZ OTP/auth, device registration, playback authorization |
+| `tvnz-plus-api` | TVNZ OTP/auth, device registration, playback authorization |
 | `src/infra/automated-login.mjs` | Automated email-code login (captcha mint → mailbox code → session) |
 | `src/infra/tvnz-session.mjs` | Session management, credential loading |
 | `src/providers/tvnz-provider.mjs` | Main TVNZ API provider, content authorization |
@@ -131,7 +131,7 @@ locations so they never get committed:
 - `.env` — see `.env.example` for variable names (`TVNZ_EMAIL`, `TVNZ_SESSION_FILE`).
 
 The automated login path (reCAPTCHA mint → code from the self-hosted mailbox →
-confirm → session) is driven by `@javagt/tvnz-plus-api`; see the README "TVNZ
+confirm → session) is driven by `tvnz-plus-api`; see the README "TVNZ
 Authentication" section and `src/infra/automated-login.mjs`.
 
 ### Content Authorization Response

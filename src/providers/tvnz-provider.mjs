@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { TvnzClient } from '@javagt/tvnz-plus-api';
+import { TvnzClient } from 'tvnz-plus-api';
 import { MediaProvider } from '../contracts/provider.mjs';
 import { extractManifestWidevineData, getWidevineKeys } from '../infra/brightcove-media.mjs';
 import { buildDownloadPlan, executeDownloadPlan } from '../application/media-pipeline.mjs';

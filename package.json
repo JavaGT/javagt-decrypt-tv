@@ -21,7 +21,7 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@javagt/tvnz-plus-api": "file:../tvnz-plus-api",
+    "tvnz-plus-api": "file:../tvnz-plus-api",
     "dotenv": "^17.4.0",
     "node-aes-cmac": "^0.1.1",
     "protobufjs": "^8.0.0",
