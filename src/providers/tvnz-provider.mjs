@@ -134,7 +134,9 @@ export async function runTvnzWorkflow(inputUrl, context = {}) {
     const { credentials, sessionFile } = loadCredentials(context, context.auth);
     let client = context.client || context.options?.client || new TvnzClient(credentials?.deviceId || credentials?.deviceref);
     if (typeof credentials === 'string') throw new Error('TVNZ email:OTP credentials require the automated login flow');
-    const loginEmail = context.options?.email || process.env.TVNZ_EMAIL;
+    // Precedence: explicit --credentials > explicit --email > discovered
+    // credentials (env/session file) > ambient TVNZ_EMAIL from .env.
+    const loginEmail = context.options?.email || (!credentials && process.env.TVNZ_EMAIL) || null;
     if (loginEmail) {
         const session = await (context.emailLogin || automatedEmailLogin)({
             email: loginEmail,
@@ -179,7 +181,7 @@ export class TvnzProvider extends MediaProvider {
     async inspect(inputUrl, context = {}) {
         const { credentials, sessionFile } = loadCredentials(context, this.auth);
         const client = context.client || this.clientFactory?.(context) || new TvnzClient(credentials?.deviceId || credentials?.deviceref);
-        const loginEmail = context.options?.email || process.env.TVNZ_EMAIL;
+        const loginEmail = context.options?.email || (!credentials && process.env.TVNZ_EMAIL) || null;
         if (loginEmail) {
             const session = await this.emailLogin({
                 email: loginEmail,

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { buildPlaybackRequestHeaders, credentialsFrom, loadCredentials, parseUrl, persistRotatedSession, resolvePlayback, TvnzProvider } from '../src/providers/tvnz-provider.mjs';
+import { buildPlaybackRequestHeaders, credentialsFrom, loadCredentials, parseUrl, persistRotatedSession, resolvePlayback, runTvnzWorkflow, TvnzProvider } from '../src/providers/tvnz-provider.mjs';
 
 test('TVNZ URL adapter maps episode and sport URLs without protocol logic', () => {
     assert.deepEqual(parseUrl('https://www.tvnz.co.nz/shows/example-show/episodes/s2-e4'), {
@@ -97,6 +97,34 @@ test('persistRotatedSession merges rotated tokens into the file atomically', asy
     } finally {
         await fs.rm(directory, { recursive: true, force: true });
     }
+});
+
+test('explicit credentials win over ambient TVNZ_EMAIL', async () => {
+    let emailCalled = false;
+    const client = {
+        setSession() {},
+        series: { getEpisode: async () => ({ slug: 'catalog-slug' }) },
+        playback: {
+            authorize: async () => ({ contentUrl: 'm', licenseUrl: 'l' }),
+            resolveManifest: async () => 'm'
+        }
+    };
+    process.env.TVNZ_EMAIL = 'someone@example.com';
+    try {
+        await runTvnzWorkflow('https://www.tvnz.co.nz/shows/example/episodes/s1-e1', {
+            client,
+            credentials: { accessToken: 'a', refreshToken: 'r', deviceref: 'd' },
+            emailLogin: async () => { emailCalled = true; return {}; },
+            options: {},
+            retention: { addEvent() {}, writeJson() {}, writeRunManifest() {}, writeSummary() {}, writeOutputFiles() {} }
+        });
+    } catch {
+        // Media fetch against the fake manifest URL fails; that's fine —
+        // what matters is that the login flow never ran.
+    } finally {
+        delete process.env.TVNZ_EMAIL;
+    }
+    assert.equal(emailCalled, false);
 });
 
 test('TVNZ playback requests combine browser and shared-client playback headers', () => {
