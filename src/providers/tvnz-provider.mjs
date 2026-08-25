@@ -35,22 +35,46 @@ function parseUrl(inputUrl) {
     throw new Error(`Could not parse TVNZ URL: ${inputUrl}`);
 }
 
-function credentialsFrom(context, auth) {
+export function credentialsFrom(context, auth) {
+    return loadCredentials(context, auth).credentials;
+}
+
+/** Like credentialsFrom, but also reports which on-disk file backed it (if any). */
+export function loadCredentials(context, auth) {
     const supplied = context.credentials;
     if (supplied) {
         if (typeof supplied === 'string' && fs.existsSync(supplied)) {
-            return JSON.parse(fs.readFileSync(supplied, 'utf8'));
+            return { credentials: JSON.parse(fs.readFileSync(supplied, 'utf8')), sessionFile: supplied };
         }
         if (typeof supplied === 'string') {
             throw new Error(`TVNZ credentials file not found: ${supplied}. Pass --credentials with a path to a session JSON file, or use --email.`);
         }
-        return supplied;
+        return { credentials: supplied, sessionFile: null };
     }
-    if (auth?.accessToken || auth?.refreshToken) return auth;
+    if (auth?.accessToken || auth?.refreshToken) return { credentials: auth, sessionFile: null };
     const env = loadFromEnv();
-    if (env.accessToken || env.refreshToken) return env;
+    if (env.accessToken || env.refreshToken) return { credentials: env, sessionFile: null };
     const file = process.env.TVNZ_SESSION_FILE || findMostRecentSessionFile();
-    return file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
+    return file && fs.existsSync(file)
+        ? { credentials: JSON.parse(fs.readFileSync(file, 'utf8')), sessionFile: file }
+        : { credentials: null, sessionFile: null };
+}
+
+/**
+ * Write Evergent-rotated tokens back to a loaded session file so other
+ * consumers of that file (e.g. the Python archive tools) stay valid. Atomic
+ * (tmp + rename), 0600, merges over any extra fields already present.
+ * Returns true when the file changed.
+ */
+export function persistRotatedSession(sessionFile, session) {
+    if (!sessionFile || !session?.accessToken) return false;
+    const original = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+    const merged = { ...original, ...session };
+    if (JSON.stringify(merged) === JSON.stringify(original)) return false;
+    const tmp = `${sessionFile}.rotate-${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, sessionFile);
+    return true;
 }
 
 export function buildPlaybackRequestHeaders(client) {
@@ -107,7 +131,7 @@ async function prepareMedia(client, playback, wvdDevicePath, options, retention)
 }
 
 export async function runTvnzWorkflow(inputUrl, context = {}) {
-    const credentials = credentialsFrom(context, context.auth);
+    const { credentials, sessionFile } = loadCredentials(context, context.auth);
     let client = context.client || context.options?.client || new TvnzClient(credentials?.deviceId || credentials?.deviceref);
     if (typeof credentials === 'string') throw new Error('TVNZ email:OTP credentials require the automated login flow');
     const loginEmail = context.options?.email || process.env.TVNZ_EMAIL;
@@ -124,6 +148,9 @@ export async function runTvnzWorkflow(inputUrl, context = {}) {
     }
     const retention = context.retention || new RetentionStore(context.downloadsPath || './downloads', inputUrl, 'tvnz');
     const playback = await resolvePlayback(client, inputUrl);
+    // Authentication may rotate the Evergent tokens — keep the session file
+    // they came from valid for its other consumers.
+    persistRotatedSession(sessionFile, client.session);
     const media = await prepareMedia(client, playback, context.wvdDevicePath || './device.wvd', context.options || {}, retention);
     const plan = buildDownloadPlan({
         mpdUrl: media.mpdUrl,
@@ -150,7 +177,7 @@ export class TvnzProvider extends MediaProvider {
         return { provider: this.id, inputUrl, success: true, message: 'TVNZ workflow completed', artifacts: { downloadsPath: context.downloadsPath || './downloads', credentialsConfigured: Boolean(context.credentials || this.auth.accessToken || this.auth.refreshToken) } };
     }
     async inspect(inputUrl, context = {}) {
-        const credentials = credentialsFrom(context, this.auth);
+        const { credentials, sessionFile } = loadCredentials(context, this.auth);
         const client = context.client || this.clientFactory?.(context) || new TvnzClient(credentials?.deviceId || credentials?.deviceref);
         const loginEmail = context.options?.email || process.env.TVNZ_EMAIL;
         if (loginEmail) {
@@ -165,6 +192,7 @@ export class TvnzProvider extends MediaProvider {
             throw new Error('Missing TVNZ credentials. Provide session tokens or --email.');
         }
         const playback = await resolvePlayback(client, inputUrl);
+        persistRotatedSession(sessionFile, client.session);
         const headers = buildPlaybackRequestHeaders(client);
         const mpdUrl = await client.playback.resolveManifest(playback, { headers });
         const report = await inspectManifestUrl(mpdUrl, { timeoutMs: context.options?.timeoutMs || 15000, headers });
@@ -172,5 +200,5 @@ export class TvnzProvider extends MediaProvider {
     }
 }
 
-export { parseUrl, credentialsFrom };
+export { parseUrl };
 export default TvnzProvider;

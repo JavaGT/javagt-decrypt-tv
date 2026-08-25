@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { buildPlaybackRequestHeaders, credentialsFrom, parseUrl, resolvePlayback, TvnzProvider } from '../src/providers/tvnz-provider.mjs';
+import { buildPlaybackRequestHeaders, credentialsFrom, loadCredentials, parseUrl, persistRotatedSession, resolvePlayback, TvnzProvider } from '../src/providers/tvnz-provider.mjs';
 
 test('TVNZ URL adapter maps episode and sport URLs without protocol logic', () => {
     assert.deepEqual(parseUrl('https://www.tvnz.co.nz/shows/example-show/episodes/s2-e4'), {
@@ -65,6 +65,38 @@ test('TVNZ adapter loads credentials from a session file', async () => {
     await fs.writeFile(sessionPath, JSON.stringify(session));
 
     assert.deepEqual(credentialsFrom({ credentials: sessionPath }, {}), session);
+});
+
+test('loadCredentials reports the backing session file', () => {
+    const inline = { accessToken: 'a', refreshToken: 'r', deviceref: 'd' };
+    assert.deepEqual(loadCredentials({ credentials: inline }, {}).sessionFile, null);
+    assert.deepEqual(loadCredentials({}, { accessToken: 'a' }), { credentials: { accessToken: 'a' }, sessionFile: null });
+});
+
+test('persistRotatedSession merges rotated tokens into the file atomically', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tvnz-rotate-'));
+    try {
+        const sessionPath = path.join(directory, 'local_storage.json');
+        await fs.writeFile(sessionPath, JSON.stringify({ accessToken: 'old', refreshToken: 'old-r', deviceref: 'dev', extra: 'kept' }));
+
+        const changed = persistRotatedSession(sessionPath, { accessToken: 'new', refreshToken: 'new-r', deviceref: 'dev', contactId: 'c1' });
+        assert.equal(changed, true);
+
+        const written = JSON.parse(await fs.readFile(sessionPath, 'utf8'));
+        assert.equal(written.accessToken, 'new');
+        assert.equal(written.refreshToken, 'new-r');
+        assert.equal(written.extra, 'kept'); // unrelated fields preserved
+        assert.equal(written.contactId, 'c1');
+        assert.equal((await fs.readdir(directory)).some((f) => f.includes('.rotate-')), false); // no tmp leftovers
+
+        // Unchanged session is a no-op.
+        assert.equal(persistRotatedSession(sessionPath, JSON.parse(await fs.readFile(sessionPath, 'utf8'))), false);
+        // No file / no session are safe no-ops.
+        assert.equal(persistRotatedSession(null, { accessToken: 'x' }), false);
+        assert.equal(persistRotatedSession(sessionPath, null), false);
+    } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+    }
 });
 
 test('TVNZ playback requests combine browser and shared-client playback headers', () => {
