@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { buildPlaybackRequestHeaders, credentialsFrom, loadCredentials, parseUrl, persistRotatedSession, resolvePlayback, runTvnzWorkflow, TvnzProvider } from '../src/providers/tvnz-provider.mjs';
+import { buildPlaybackRequestHeaders, credentialsFrom, isRecoverableSessionError, loadCredentials, parseUrl, persistRotatedSession, resolvePlayback, resolvePlaybackWithRecovery, runTvnzWorkflow, TvnzProvider } from '../src/providers/tvnz-provider.mjs';
 
 test('TVNZ URL adapter maps episode and sport URLs without protocol logic', () => {
     assert.deepEqual(parseUrl('https://www.tvnz.co.nz/shows/example-show/episodes/s2-e4'), {
@@ -31,6 +31,109 @@ test('TVNZ adapter delegates catalog and playback to the shared client', async (
         ['authorize', 'catalog-slug', 'vod', 'tvepisode']
     ]);
     assert.equal(result.contentUrl, 'manifest');
+});
+
+test('recoverable session errors are narrowly identified', () => {
+    assert.equal(isRecoverableSessionError(new Error('Evergent refresh failed: Authentication Failed')), true);
+    assert.equal(isRecoverableSessionError(new Error('session revoked eV2767')), true);
+    assert.equal(isRecoverableSessionError(new Error('manifest returned 404')), false);
+});
+
+test('resolvePlaybackWithRecovery logs in once and retries a revoked session', async () => {
+    const calls = [];
+    let attempts = 0;
+    const client = {
+        setSession: (session) => calls.push(['session', session]),
+        series: { getEpisode: async () => ({ slug: 'catalog-slug' }) },
+        playback: {
+            authorize: async () => {
+                attempts += 1;
+                if (attempts === 1) throw new Error('Evergent refresh failed: Authentication Failed');
+                return { contentUrl: 'manifest', licenseUrl: 'license' };
+            }
+        }
+    };
+
+    const result = await resolvePlaybackWithRecovery(client, 'https://www.tvnz.co.nz/shows/example/episodes/s1-e2', {
+        email: 'user@example.test',
+        emailLogin: async (options) => {
+            calls.push(['login', options]);
+            return { accessToken: 'fresh-a', refreshToken: 'fresh-r', deviceref: 'fresh-d' };
+        }
+    });
+
+    assert.equal(result.licenseUrl, 'license');
+    assert.equal(attempts, 2);
+    assert.deepEqual(calls, [
+        ['login', { email: 'user@example.test' }],
+        ['session', { accessToken: 'fresh-a', refreshToken: 'fresh-r', deviceref: 'fresh-d' }]
+    ]);
+});
+
+test('resolvePlaybackWithRecovery does not login without an account email', async () => {
+    let attempts = 0;
+    const client = {
+        series: { getEpisode: async () => ({ slug: 'catalog-slug' }) },
+        playback: { authorize: async () => { attempts += 1; throw new Error('Authentication Failed'); } }
+    };
+
+    await assert.rejects(
+        resolvePlaybackWithRecovery(client, 'https://www.tvnz.co.nz/shows/example/episodes/s1-e2'),
+        /Authentication Failed/
+    );
+    assert.equal(attempts, 1);
+});
+
+test('TVNZ inspect auto-recovers a discovered session using TVNZ_EMAIL', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tvnz-recovery-'));
+    const sessionPath = path.join(directory, 'session.json');
+    await fs.writeFile(sessionPath, JSON.stringify({
+        accessToken: 'old-a', refreshToken: 'old-r', deviceref: 'old-d', extra: 'kept'
+    }));
+
+    const previousEmail = process.env.TVNZ_EMAIL;
+    const previousSessionFile = process.env.TVNZ_SESSION_FILE;
+    const previousFetch = globalThis.fetch;
+    let authorizeAttempts = 0;
+    let loginOptions;
+    const client = {
+        auth: { playbackHeaders: () => ({}) },
+        setSession: () => {},
+        playback: {
+            authorize: async () => {
+                authorizeAttempts += 1;
+                if (authorizeAttempts === 1) throw new Error('Evergent refresh failed: Authentication Failed');
+                return { contentUrl: 'manifest', licenseUrl: 'license' };
+            },
+            resolveManifest: async () => 'https://manifest.test/file.mpd'
+        }
+    };
+    const provider = new TvnzProvider({
+        emailLogin: async (options) => {
+            loginOptions = options;
+            return { accessToken: 'fresh-a', refreshToken: 'fresh-r', deviceref: 'fresh-d' };
+        }
+    });
+
+    process.env.TVNZ_EMAIL = 'user@example.test';
+    process.env.TVNZ_SESSION_FILE = sessionPath;
+    globalThis.fetch = async () => new Response('<MPD type="static"></MPD>', { status: 200 });
+    try {
+        await provider.inspect('https://www.tvnz.co.nz/sport/foo/bar/live-match', { client, options: {} });
+        assert.deepEqual(loginOptions, { email: 'user@example.test', sessionPath });
+        assert.equal(authorizeAttempts, 2);
+        assert.deepEqual(JSON.parse(await fs.readFile(sessionPath, 'utf8')), {
+            accessToken: 'fresh-a', refreshToken: 'fresh-r', deviceref: 'fresh-d', extra: 'kept'
+        });
+        assert.equal((await fs.stat(sessionPath)).mode & 0o777, 0o600);
+    } finally {
+        if (previousEmail === undefined) delete process.env.TVNZ_EMAIL;
+        else process.env.TVNZ_EMAIL = previousEmail;
+        if (previousSessionFile === undefined) delete process.env.TVNZ_SESSION_FILE;
+        else process.env.TVNZ_SESSION_FILE = previousSessionFile;
+        globalThis.fetch = previousFetch;
+        await fs.rm(directory, { recursive: true, force: true });
+    }
 });
 
 test('TVNZ movie URLs delegate to getMovie and authorize the movie content ID', async () => {
@@ -94,6 +197,23 @@ test('persistRotatedSession merges rotated tokens into the file atomically', asy
         // No file / no session are safe no-ops.
         assert.equal(persistRotatedSession(null, { accessToken: 'x' }), false);
         assert.equal(persistRotatedSession(sessionPath, null), false);
+    } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+});
+
+test('persistRotatedSession creates a private session file when none exists', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tvnz-new-session-'));
+    try {
+        const sessionPath = path.join(directory, 'nested', 'session.json');
+        assert.equal(persistRotatedSession(sessionPath, {
+            accessToken: 'access', refreshToken: 'refresh', deviceref: 'device'
+        }), true);
+        const stat = await fs.stat(sessionPath);
+        assert.equal(stat.mode & 0o777, 0o600);
+        assert.deepEqual(JSON.parse(await fs.readFile(sessionPath, 'utf8')), {
+            accessToken: 'access', refreshToken: 'refresh', deviceref: 'device'
+        });
     } finally {
         await fs.rm(directory, { recursive: true, force: true });
     }

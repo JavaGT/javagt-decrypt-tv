@@ -6,7 +6,7 @@ import { buildDownloadPlan, executeDownloadPlan } from '../application/media-pip
 import { fetchText } from '../infra/http-client.mjs';
 import { inspectManifestUrl } from '../n3u8dl-node/index.mjs';
 import RetentionStore from '../infra/retention-store.mjs';
-import { loadFromEnv, findMostRecentSessionFile } from '../infra/tvnz-session.mjs';
+import { loadFromEnv, findMostRecentSessionFile, persistSessionFile } from '../infra/tvnz-session.mjs';
 import { automatedEmailLogin } from '../infra/automated-login.mjs';
 
 const REQUEST_HEADERS = {
@@ -67,14 +67,7 @@ export function loadCredentials(context, auth) {
  * Returns true when the file changed.
  */
 export function persistRotatedSession(sessionFile, session) {
-    if (!sessionFile || !session?.accessToken) return false;
-    const original = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
-    const merged = { ...original, ...session };
-    if (JSON.stringify(merged) === JSON.stringify(original)) return false;
-    const tmp = `${sessionFile}.rotate-${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(merged, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, sessionFile);
-    return true;
+    return persistSessionFile(sessionFile, session);
 }
 
 export function buildPlaybackRequestHeaders(client) {
@@ -110,6 +103,45 @@ export async function resolvePlayback(client, inputUrl) {
     return client.playback.authorize(contentId, parsed.contentTypeId, parsed.catalogType);
 }
 
+/**
+ * Identify errors for which a fresh OTP login can help. Content, manifest, and
+ * entitlement errors must still surface normally; only the known Evergent
+ * session failures trigger recovery.
+ */
+export function isRecoverableSessionError(error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return /Evergent refresh failed|Authentication Failed|eV2767|revoked|unauthorized|\b401\b|111111111/i.test(message);
+}
+
+/**
+ * Resolve playback and, when an account email is available, recover once from
+ * a revoked/expired session through the same automated OTP flow as tvnz-login.
+ * A single bounded retry prevents bad credentials or a mailbox outage from
+ * creating a login loop.
+ */
+export async function resolvePlaybackWithRecovery(client, inputUrl, {
+    email,
+    sessionFile = null,
+    emailLogin = automatedEmailLogin,
+    onProgress
+} = {}) {
+    try {
+        return await resolvePlayback(client, inputUrl);
+    } catch (error) {
+        if (!email || !isRecoverableSessionError(error)) throw error;
+
+        const loginOptions = { email };
+        if (sessionFile) loginOptions.sessionPath = sessionFile;
+        if (onProgress) loginOptions.onProgress = onProgress;
+        const session = await emailLogin(loginOptions);
+        setClientSession(client, session);
+        // Custom login providers used by library consumers may return a session
+        // without persisting it; keep the file contract true in that case too.
+        if (sessionFile) persistSessionFile(sessionFile, session);
+        return resolvePlayback(client, inputUrl);
+    }
+}
+
 async function prepareMedia(client, playback, wvdDevicePath, options, retention) {
     const requestHeaders = buildPlaybackRequestHeaders(client);
     const mpdUrl = await client.playback.resolveManifest(playback, { headers: requestHeaders });
@@ -137,10 +169,12 @@ export async function runTvnzWorkflow(inputUrl, context = {}) {
     // Precedence: explicit --credentials > explicit --email > discovered
     // credentials (env/session file) > ambient TVNZ_EMAIL from .env.
     const loginEmail = context.options?.email || (!credentials && process.env.TVNZ_EMAIL) || null;
+    const explicitCredentials = Boolean(context.credentials || context.auth?.accessToken || context.auth?.refreshToken);
+    const recoveryEmail = context.options?.email || (!explicitCredentials ? process.env.TVNZ_EMAIL : null);
     if (loginEmail) {
         const session = await (context.emailLogin || automatedEmailLogin)({
             email: loginEmail,
-            sessionPath: context.options.sessionPath
+            sessionPath: context.options?.sessionPath
         });
         setClientSession(client, session);
     } else if (credentials) {
@@ -149,7 +183,12 @@ export async function runTvnzWorkflow(inputUrl, context = {}) {
         throw new Error('Missing TVNZ credentials. Provide session tokens or --email.');
     }
     const retention = context.retention || new RetentionStore(context.downloadsPath || './downloads', inputUrl, 'tvnz');
-    const playback = await resolvePlayback(client, inputUrl);
+    const playback = await resolvePlaybackWithRecovery(client, inputUrl, {
+        email: recoveryEmail,
+        sessionFile,
+        emailLogin: context.emailLogin || automatedEmailLogin,
+        onProgress: context.options?.onProgress
+    });
     // Authentication may rotate the Evergent tokens — keep the session file
     // they came from valid for its other consumers.
     persistRotatedSession(sessionFile, client.session);
@@ -182,10 +221,12 @@ export class TvnzProvider extends MediaProvider {
         const { credentials, sessionFile } = loadCredentials(context, this.auth);
         const client = context.client || this.clientFactory?.(context) || new TvnzClient(credentials?.deviceId || credentials?.deviceref);
         const loginEmail = context.options?.email || (!credentials && process.env.TVNZ_EMAIL) || null;
+        const explicitCredentials = Boolean(context.credentials || this.auth?.accessToken || this.auth?.refreshToken);
+        const recoveryEmail = context.options?.email || (!explicitCredentials ? process.env.TVNZ_EMAIL : null);
         if (loginEmail) {
             const session = await this.emailLogin({
                 email: loginEmail,
-                sessionPath: context.options.sessionPath
+                sessionPath: context.options?.sessionPath
             });
             setClientSession(client, session);
         } else if (credentials) {
@@ -193,7 +234,12 @@ export class TvnzProvider extends MediaProvider {
         } else {
             throw new Error('Missing TVNZ credentials. Provide session tokens or --email.');
         }
-        const playback = await resolvePlayback(client, inputUrl);
+        const playback = await resolvePlaybackWithRecovery(client, inputUrl, {
+            email: recoveryEmail,
+            sessionFile,
+            emailLogin: this.emailLogin,
+            onProgress: context.options?.onProgress
+        });
         persistRotatedSession(sessionFile, client.session);
         const headers = buildPlaybackRequestHeaders(client);
         const mpdUrl = await client.playback.resolveManifest(playback, { headers });

@@ -55,6 +55,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 
 /**
  * Storage keys that TVNZ uses in browser localStorage/sessionStorage
@@ -189,12 +190,55 @@ export function loadFromEnv() {
 }
 
 /**
- * Save credentials to a JSON file for later use
+ * Save credentials to a JSON file for later use.
+ *
+ * Session files contain bearer credentials, so write them atomically and keep
+ * them private even when the file did not exist before.
  * @param {string} filePath - Path to save credentials
  * @param {Object} credentials - Credentials to save
  */
 export function saveCredentials(filePath, credentials) {
-    fs.writeFileSync(filePath, JSON.stringify(credentials, null, 2));
+    writeJsonFile(filePath, credentials, false);
+}
+
+/**
+ * Merge a session into a file using a private temporary file and atomic rename.
+ * This also supports the first automated login, when the target does not yet
+ * exist, while preserving unrelated browser-export fields on refresh.
+ * @param {string} filePath - Session JSON path
+ * @param {Object} session - Newly issued session fields
+ * @returns {boolean} whether the file was written
+ */
+export function persistSessionFile(filePath, session) {
+    if (!filePath || !session?.accessToken) return false;
+
+    return writeJsonFile(filePath, session, true);
+}
+
+function writeJsonFile(filePath, value, mergeExisting) {
+    if (!filePath) return false;
+
+    const directory = path.dirname(filePath);
+    fs.mkdirSync(directory, { recursive: true });
+    const original = mergeExisting && fs.existsSync(filePath)
+        ? JSON.parse(fs.readFileSync(filePath, 'utf8'))
+        : {};
+    const output = mergeExisting ? { ...original, ...value } : value;
+    if (mergeExisting && JSON.stringify(output) === JSON.stringify(original)) {
+        fs.chmodSync(filePath, 0o600);
+        return false;
+    }
+
+    const temporary = `${filePath}.rotate-${process.pid}-${randomUUID()}.tmp`;
+    try {
+        fs.writeFileSync(temporary, JSON.stringify(output, null, 2), { mode: 0o600 });
+        fs.chmodSync(temporary, 0o600);
+        fs.renameSync(temporary, filePath);
+        return true;
+    } catch (error) {
+        try { fs.unlinkSync(temporary); } catch { /* best effort cleanup */ }
+        throw error;
+    }
 }
 
 /**

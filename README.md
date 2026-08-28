@@ -135,7 +135,8 @@ npx tvnz-captcha              # mint a reCAPTCHA token (writes ~/.tvnz-captcha)
 # self-hosted mailbox, saves a session the downloader auto-detects):
 node src/adapters/cli.mjs --login yourname@anything.javagrant.ac.nz
 
-# Or set TVNZ_EMAIL in .env and download directly — login happens automatically:
+# Or set TVNZ_EMAIL in .env and download directly — login happens automatically
+# when no session exists, and again if the existing session is revoked:
 node src/adapters/cli.mjs <url>
 
 # Or log in on the fly with an explicit account:
@@ -146,19 +147,25 @@ Environment variables (see `.env.example`):
 
 | Variable | Purpose | Required |
 |---|---|---|
-| `TVNZ_EMAIL` | Account used by the automated login (used when no `--email` flag) | recommended |
+| `TVNZ_EMAIL` | Account for automated login and revoked-session recovery (unless `--credentials` is explicit) | recommended |
 | `WIDEVINE_DEVICE_FILEPATH` | Widevine device file for decryption | yes* |
 | `TVNZ_API_USER` / `TVNZ_API_PASSWORD` / `TVNZ_CLIENT_ID` / `TVNZ_CLIENT_SECRET` | Overrides forwarded to the SDK (embedded defaults exist) | no |
 | `TVNZ_CAPTCHA_TOKEN` | reCAPTCHA token (else `~/.tvnz-captcha`) | no |
 | `TVNZ_SESSION_FILE` | Explicit credentials file (else auto-detected) | no |
+
+When a discovered session is rejected by TVNZ, the downloader performs one
+automatic OTP login and retries playback. Set `TVNZ_EMAIL` so it knows which
+account to refresh; explicit `--credentials` remains authoritative and will
+not silently switch accounts. Recovery is bounded to one attempt per process.
 
 \* The downloader looks for `./device.wvd` by default.
 
 Prerequisites for the automated path:
 - The self-hosted Postfix mail pipeline (`@*.javagrant.ac.nz` → `~/Mail`) — see
   `~/Code/neweps-cc/SELFHOSTED-EMAIL-CODES.md`.
-- A fresh reCAPTCHA token: `npx tvnz-captcha` (opens a Chrome window briefly).
-  The login reads `~/.tvnz-captcha` automatically.
+- Playwright available to `tvnz-plus-api` so login can mint reCAPTCHA in Chrome
+  automatically. A fresh `TVNZ_CAPTCHA_TOKEN` or `~/.tvnz-captcha` token is
+  also accepted and skips browser minting.
 
 **2. Manual session** — see [TVNZ-PROVIDER.md](./docs/TVNZ-PROVIDER.md) for:
 - Session token extraction from browser
