@@ -1,3 +1,8 @@
+> [!WARNING]
+> **DEPRECATED — this project has been merged into [tvnz-toolkit](https://github.com/JavaGT/tvnz-toolkit).**
+> All functionality now lives in that single TypeScript package (`src/api`, `src/decrypt`, `src/archive`).
+> This repo is archived and read-only, kept for history only.
+
 # Backend/CLI Extensible Architecture
 
 This folder provides a best-practice structure for reusing streaming workflows
